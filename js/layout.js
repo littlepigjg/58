@@ -1,122 +1,265 @@
 const LayoutManager = (() => {
 
-    let state = null;
+    let mainList = null;
     let onChangeCallback = null;
     let onSelectCallback = null;
+    let selectedColId = null;
 
     function init(initialState, callbacks) {
-        state = initialState;
         onChangeCallback = callbacks.onChange || (() => {});
         onSelectCallback = callbacks.onSelect || (() => {});
+
+        mainList = BlockListManager.createManager(
+            initialState.blocks || [],
+            onMainListChange
+        );
+
+        selectedColId = null;
+    }
+
+    function onMainListChange(blocks) {
+        onChangeCallback(getState());
     }
 
     function getState() {
-        return state;
+        return {
+            blocks: mainList.getBlocks(),
+            selectedId: mainList.getSelectedId(),
+            selectedColId: selectedColId
+        };
     }
 
     function setState(newState) {
-        state = newState;
-        onChangeCallback(state);
+        mainList.setBlocks(newState.blocks || []);
+        mainList.setSelectedId(newState.selectedId || null);
+        selectedColId = newState.selectedColId || null;
+        onChangeCallback(getState());
     }
 
-    function addBlock(block, targetIndex = null) {
-        const newBlocks = [...state.blocks];
-        if (targetIndex === null || targetIndex >= newBlocks.length) {
-            newBlocks.push(block);
-        } else {
-            newBlocks.splice(targetIndex, 0, block);
-        }
-        setState({ ...state, blocks: newBlocks });
+    function selectBlock(blockId, colId) {
+        mainList.setSelectedId(blockId);
+        selectedColId = colId || null;
+        onSelectCallback(blockId, colId);
+    }
+
+    function getSelectedInfo() {
+        return {
+            blockId: mainList.getSelectedId(),
+            colId: selectedColId
+        };
+    }
+
+    function getSelectedBlock() {
+        return mainList.getSelectedBlock();
+    }
+
+    function getBlockIndex(blockId) {
+        return mainList.getBlockIndex(blockId);
+    }
+
+    function addBlock(block, targetIndex) {
+        mainList.addBlock(block, targetIndex);
     }
 
     function removeBlock(blockId) {
-        const newBlocks = state.blocks.filter(b => b.id !== blockId);
-        setState({ ...state, blocks: newBlocks });
-        if (state.selectedId === blockId) {
-            selectBlock(null);
+        mainList.removeBlock(blockId);
+        if (selectedColId && !mainList.getBlockById(blockId)) {
+            selectedColId = null;
         }
     }
 
     function moveBlock(fromIndex, toIndex) {
-        if (fromIndex === toIndex) return;
-        const newBlocks = [...state.blocks];
-        const [removed] = newBlocks.splice(fromIndex, 1);
-        newBlocks.splice(toIndex > fromIndex ? toIndex - 1 : toIndex, 0, removed);
-        setState({ ...state, blocks: newBlocks });
+        mainList.moveBlock(fromIndex, toIndex);
     }
 
     function updateBlock(blockId, data) {
-        const newBlocks = state.blocks.map(b => {
-            if (b.id === blockId) {
-                return { ...b, data: { ...b.data, ...data } };
-            }
-            return b;
-        });
-        setState({ ...state, blocks: newBlocks });
-    }
-
-    function selectBlock(blockId) {
-        state.selectedId = blockId;
-        onSelectCallback(blockId);
-    }
-
-    function getSelectedBlock() {
-        if (!state.selectedId) return null;
-        return state.blocks.find(b => b.id === state.selectedId) || null;
-    }
-
-    function getBlockIndex(blockId) {
-        return state.blocks.findIndex(b => b.id === blockId);
+        mainList.updateBlock(blockId, data);
     }
 
     function duplicateBlock(blockId) {
-        const index = getBlockIndex(blockId);
-        if (index === -1) return;
-        const original = state.blocks[index];
-        const copy = JSON.parse(JSON.stringify(original));
-        copy.id = 'block_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        if (copy.data.children) {
-            copy.data.children = copy.data.children.map(c => ({
-                ...c,
-                id: 'colitem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
-            }));
-        }
-        addBlock(copy, index + 1);
-    }
-
-    function updateColumnChild(blockId, colIndex, data) {
-        const newBlocks = state.blocks.map(b => {
-            if (b.id === blockId && b.data.children && b.data.children[colIndex]) {
-                const newChildren = [...b.data.children];
-                newChildren[colIndex] = {
-                    ...newChildren[colIndex],
-                    data: { ...newChildren[colIndex].data, ...data }
-                };
-                return { ...b, data: { ...b.data, children: newChildren } };
-            }
-            return b;
-        });
-        setState({ ...state, blocks: newBlocks });
+        mainList.duplicateBlock(blockId);
     }
 
     function clearAll() {
-        setState({ ...state, blocks: [], selectedId: null });
-        selectBlock(null);
+        mainList.clear();
+        selectedColId = null;
+        selectBlock(null, null);
+    }
+
+    function getColumnManager(blockId, colId) {
+        const block = mainList.getBlockById(blockId);
+        if (!block || block.type !== 'columns') return null;
+
+        const col = block.data.children.find(c => c.id === colId);
+        if (!col) return null;
+
+        const onChange = () => {
+            const newBlocks = mainList.getBlocks().map(b => {
+                if (b.id === blockId) {
+                    return JSON.parse(JSON.stringify(b));
+                }
+                return b;
+            });
+            mainList.setBlocks(newBlocks);
+        };
+
+        return BlockListManager.createManager(col.blocks, onChange);
+    }
+
+    function addBlockToColumn(blockId, colId, newBlock, targetIndex) {
+        const colMgr = getColumnManager(blockId, colId);
+        if (!colMgr) return;
+        colMgr.addBlock(newBlock, targetIndex);
+    }
+
+    function removeBlockFromColumn(blockId, colId, childBlockId) {
+        const colMgr = getColumnManager(blockId, colId);
+        if (!colMgr) return;
+        colMgr.removeBlock(childBlockId);
+
+        const selected = getSelectedInfo();
+        if (selected.blockId === childBlockId) {
+            selectBlock(null, null);
+        }
+    }
+
+    function moveBlockInColumn(blockId, colId, fromIndex, toIndex) {
+        const colMgr = getColumnManager(blockId, colId);
+        if (!colMgr) return;
+        colMgr.moveBlock(fromIndex, toIndex);
+    }
+
+    function updateColumnBlock(blockId, colId, childBlockId, data) {
+        const colMgr = getColumnManager(blockId, colId);
+        if (!colMgr) return;
+        colMgr.updateBlock(childBlockId, data);
+    }
+
+    function duplicateColumnBlock(blockId, colId, childBlockId) {
+        const colMgr = getColumnManager(blockId, colId);
+        if (!colMgr) return;
+        colMgr.duplicateBlock(childBlockId);
+    }
+
+    function getColumnBlockIndex(blockId, colId, childBlockId) {
+        const colMgr = getColumnManager(blockId, colId);
+        if (!colMgr) return -1;
+        return colMgr.getBlockIndex(childBlockId);
+    }
+
+    function handleColumnCountChange(blockId, newCount) {
+        const block = mainList.getBlockById(blockId);
+        if (!block || block.type !== 'columns') return;
+
+        const targetCount = parseInt(newCount);
+        const newChildren = JSON.parse(JSON.stringify(block.data.children || []));
+
+        while (newChildren.length < targetCount) {
+            newChildren.push({
+                id: 'col_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                blocks: []
+            });
+        }
+        while (newChildren.length > targetCount) {
+            newChildren.pop();
+        }
+
+        updateBlock(blockId, { columns: targetCount, children: newChildren });
+    }
+
+    function findBlockByIdRecursive(blockId) {
+        let result = mainList.getBlockById(blockId);
+        if (result) {
+            return { block: result, parentBlockId: null, colId: null };
+        }
+
+        const blocks = mainList.getBlocks();
+        for (let i = 0; i < blocks.length; i++) {
+            const b = blocks[i];
+            if (b.type === 'columns' && b.data.children) {
+                for (let j = 0; j < b.data.children.length; j++) {
+                    const col = b.data.children[j];
+                    if (col.blocks) {
+                        const found = col.blocks.find(cb => cb.id === blockId);
+                        if (found) {
+                            return { block: found, parentBlockId: b.id, colId: col.id };
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function updateAnyBlock(blockId, data) {
+        const info = findBlockByIdRecursive(blockId);
+        if (!info) return;
+
+        if (info.parentBlockId && info.colId) {
+            updateColumnBlock(info.parentBlockId, info.colId, blockId, data);
+        } else {
+            updateBlock(blockId, data);
+        }
+    }
+
+    function deleteAnyBlock(blockId) {
+        const info = findBlockByIdRecursive(blockId);
+        if (!info) return;
+
+        if (info.parentBlockId && info.colId) {
+            removeBlockFromColumn(info.parentBlockId, info.colId, blockId);
+        } else {
+            removeBlock(blockId);
+        }
+    }
+
+    function duplicateAnyBlock(blockId) {
+        const info = findBlockByIdRecursive(blockId);
+        if (!info) return;
+
+        if (info.parentBlockId && info.colId) {
+            duplicateColumnBlock(info.parentBlockId, info.colId, blockId);
+        } else {
+            duplicateBlock(blockId);
+        }
+    }
+
+    function selectAnyBlock(blockId) {
+        const info = findBlockByIdRecursive(blockId);
+        if (!info) {
+            selectBlock(null, null);
+            return;
+        }
+        selectBlock(blockId, info.colId);
     }
 
     return {
         init,
         getState,
         setState,
+        selectBlock,
+        selectAnyBlock,
+        getSelectedInfo,
+        getSelectedBlock,
+        getBlockIndex,
         addBlock,
         removeBlock,
         moveBlock,
         updateBlock,
-        selectBlock,
-        getSelectedBlock,
-        getBlockIndex,
         duplicateBlock,
-        updateColumnChild,
-        clearAll
+        clearAll,
+        getColumnManager,
+        addBlockToColumn,
+        removeBlockFromColumn,
+        moveBlockInColumn,
+        updateColumnBlock,
+        duplicateColumnBlock,
+        getColumnBlockIndex,
+        handleColumnCountChange,
+        findBlockByIdRecursive,
+        updateAnyBlock,
+        deleteAnyBlock,
+        duplicateAnyBlock
     };
 })();

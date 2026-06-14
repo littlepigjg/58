@@ -306,16 +306,129 @@ body {
 
 .mj-column {
     flex: 1;
-    min-height: 60px;
+    min-height: 80px;
     background: #f9fafb;
-    border: 2px dashed #d1d5db;
+    border: 2px solid #e5e7eb;
     border-radius: 6px;
-    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.2s;
 }
 
-.mj-column.drag-over {
+.mj-column:hover {
+    border-color: #93c5fd;
+}
+
+.mj-column.column-selected {
     border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102,126,234,0.2);
     background: #eff6ff;
+}
+
+.column-header {
+    padding: 6px 12px;
+    background: #f3f4f6;
+    border-bottom: 1px solid #e5e7eb;
+    border-radius: 4px 4px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    user-select: none;
+}
+
+.column-content {
+    flex: 1;
+    padding: 8px;
+    min-height: 50px;
+    border-radius: 0 0 4px 4px;
+    transition: all 0.2s;
+}
+
+.column-content.drag-over {
+    background: #dbeafe;
+}
+
+.column-empty-hint {
+    text-align: center;
+    color: #9ca3af;
+    padding: 20px 10px;
+    font-size: 13px;
+    font-style: italic;
+}
+
+.child-block-wrapper {
+    position: relative;
+    background: white;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    padding: 10px;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.child-block-wrapper:last-child {
+    margin-bottom: 0;
+}
+
+.child-block-wrapper:hover {
+    border-color: #93c5fd;
+}
+
+.child-block-wrapper.selected {
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102,126,234,0.2);
+}
+
+.child-block-wrapper.dragging {
+    opacity: 0.5;
+}
+
+.child-block-wrapper.drag-over-top {
+    border-top: 3px solid #667eea;
+}
+
+.child-block-wrapper.drag-over-bottom {
+    border-bottom: 3px solid #667eea;
+}
+
+.child-block-drag-handle {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 24px;
+    height: 24px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    cursor: grab;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #6b7280;
+    z-index: 10;
+}
+
+.child-block-wrapper:hover .child-block-drag-handle,
+.child-block-wrapper.selected .child-block-drag-handle {
+    display: flex;
+}
+
+.child-block-drag-handle:active {
+    cursor: grabbing;
+}
+
+.child-block-actions {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: none;
+    gap: 4px;
+    z-index: 10;
+}
+
+.child-block-wrapper:hover .child-block-actions,
+.child-block-wrapper.selected .child-block-actions {
+    display: flex;
 }
 
 .sidebar-right {

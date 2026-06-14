@@ -108,10 +108,10 @@ const TemplateEngine = (() => {
         var columnsHtml = '';
 
         for (var i = 0; i < columns; i++) {
-            var child = d.children[i];
+            var col = d.children[i];
             var innerContent = '';
-            if (child) {
-                innerContent = renderBlock(child);
+            if (col && col.blocks && col.blocks.length > 0) {
+                innerContent = col.blocks.map(function(b) { return renderBlock(b); }).join('\n');
             }
             columnsHtml += '<td valign="top" width="' + widthPct + '%" style="width:' + widthPct + '%;">' +
                 '<table border="0" cellpadding="0" cellspacing="0" width="100%">' +

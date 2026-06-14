@@ -231,9 +231,8 @@ const ComponentLibrary = (() => {
             defaults.children = [];
             for (let i = 0; i < defaults.columns; i++) {
                 defaults.children.push({
-                    id: 'colitem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9) + '_' + i,
-                    type: 'paragraph',
-                    data: JSON.parse(JSON.stringify(PARAGRAPH_DEFAULTS))
+                    id: 'col_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                    blocks: []
                 });
             }
         }

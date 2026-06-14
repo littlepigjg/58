@@ -2,13 +2,15 @@ const App = (() => {
 
     let draggingType = null;
     let draggingBlockId = null;
-    let dragOverBlockId = null;
-    let dragOverPosition = null;
+    let draggingParentBlockId = null;
+    let draggingColId = null;
+    let dragOverTarget = null;
 
     function init() {
         const initialState = {
             blocks: [],
-            selectedId: null
+            selectedId: null,
+            selectedColId: null
         };
 
         LayoutManager.init(initialState, {
@@ -30,7 +32,7 @@ const App = (() => {
         renderProperties();
     }
 
-    function onSelectChange(blockId) {
+    function onSelectChange(blockId, colId) {
         renderEditor();
         renderProperties();
     }
@@ -39,61 +41,61 @@ const App = (() => {
         const list = document.getElementById('component-list');
         const components = ComponentLibrary.getAllComponents();
 
-        list.innerHTML = components.map(comp => `
-            <div class="component-item" draggable="true" data-type="${comp.type}">
-                <span class="icon">${comp.icon}</span>
-                <span class="label">${comp.label}</span>
-            </div>
-        `).join('');
+        list.innerHTML = components.map(function(comp) {
+            return '<div class="component-item" draggable="true" data-type="' + comp.type + '">' +
+                '<span class="icon">' + comp.icon + '</span>' +
+                '<span class="label">' + comp.label + '</span>' +
+            '</div>';
+        }).join('');
 
-        list.querySelectorAll('.component-item').forEach(item => {
-            item.addEventListener('dragstart', (e) => {
+        list.querySelectorAll('.component-item').forEach(function(item) {
+            item.addEventListener('dragstart', function(e) {
                 draggingType = item.dataset.type;
                 draggingBlockId = null;
+                draggingParentBlockId = null;
+                draggingColId = null;
                 e.dataTransfer.effectAllowed = 'copy';
                 e.dataTransfer.setData('text/plain', draggingType);
             });
 
-            item.addEventListener('dragend', () => {
-                draggingType = null;
-                draggingBlockId = null;
-                clearDragOver();
+            item.addEventListener('dragend', function() {
+                clearDragState();
             });
         });
     }
 
     function bindGlobalEvents() {
-        document.getElementById('btn-view-desktop').addEventListener('click', (e) => {
+        document.getElementById('btn-view-desktop').addEventListener('click', function() {
             setViewToggle('desktop');
         });
-        document.getElementById('btn-view-mobile').addEventListener('click', (e) => {
+        document.getElementById('btn-view-mobile').addEventListener('click', function() {
             setViewToggle('mobile');
         });
 
-        document.getElementById('btn-export-html').addEventListener('click', () => {
+        document.getElementById('btn-export-html').addEventListener('click', function() {
             IOManager.exportHtml(LayoutManager.getState().blocks);
         });
 
-        document.getElementById('btn-export-json').addEventListener('click', () => {
+        document.getElementById('btn-export-json').addEventListener('click', function() {
             IOManager.exportJson(LayoutManager.getState());
         });
 
         const fileInput = document.getElementById('file-import');
-        document.getElementById('btn-import-json').addEventListener('click', () => {
+        document.getElementById('btn-import-json').addEventListener('click', function() {
             fileInput.click();
         });
-        fileInput.addEventListener('change', (e) => {
+        fileInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
-            IOManager.importJson(file).then(data => {
-                LayoutManager.setState({ blocks: data.blocks, selectedId: null });
-            }).catch(err => {
+            IOManager.importJson(file).then(function(data) {
+                LayoutManager.setState({ blocks: data.blocks, selectedId: null, selectedColId: null });
+            }).catch(function(err) {
                 alert(err.message);
             });
             fileInput.value = '';
         });
 
-        document.getElementById('btn-clear').addEventListener('click', () => {
+        document.getElementById('btn-clear').addEventListener('click', function() {
             if (LayoutManager.getState().blocks.length === 0) return;
             if (confirm('确定要清空所有内容吗？')) {
                 LayoutManager.clearAll();
@@ -102,19 +104,20 @@ const App = (() => {
 
         const canvas = document.getElementById('editor-canvas');
 
-        canvas.addEventListener('dragover', (e) => {
+        canvas.addEventListener('dragover', function(e) {
+            if (!draggingType && !draggingBlockId) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = draggingBlockId ? 'move' : 'copy';
             canvas.classList.add('drag-over');
         });
 
-        canvas.addEventListener('dragleave', (e) => {
+        canvas.addEventListener('dragleave', function(e) {
             if (e.target === canvas) {
                 canvas.classList.remove('drag-over');
             }
         });
 
-        canvas.addEventListener('drop', (e) => {
+        canvas.addEventListener('drop', function(e) {
             e.preventDefault();
             canvas.classList.remove('drag-over');
             clearDragOver();
@@ -123,24 +126,26 @@ const App = (() => {
                 const block = ComponentLibrary.createBlock(draggingType);
                 LayoutManager.addBlock(block);
             }
+            clearDragState();
         });
 
-        document.addEventListener('click', (e) => {
-            const wrapper = e.target.closest('.block-wrapper');
+        document.addEventListener('click', function(e) {
+            const blockWrapper = e.target.closest('.block-wrapper');
+            const childWrapper = e.target.closest('.child-block-wrapper');
             const column = e.target.closest('.mj-column');
             const actionBtn = e.target.closest('.block-action-btn');
             const properties = e.target.closest('.properties-panel');
             const componentItem = e.target.closest('.component-item');
 
-            if (!wrapper && !column && !properties && !componentItem) {
-                LayoutManager.selectBlock(null);
+            if (!blockWrapper && !childWrapper && !column && !properties && !componentItem) {
+                LayoutManager.selectBlock(null, null);
             }
         });
     }
 
     function setViewToggle(view) {
         PreviewRenderer.setView(view);
-        document.querySelectorAll('.btn-toggle').forEach(btn => {
+        document.querySelectorAll('.btn-toggle').forEach(function(btn) {
             btn.classList.toggle('active', btn.dataset.view === view);
         });
     }
@@ -150,55 +155,116 @@ const App = (() => {
         const state = LayoutManager.getState();
 
         if (state.blocks.length === 0) {
-            canvas.innerHTML = `<div class="empty-hint"><p>👈 从左侧拖拽组件到这里开始编辑</p></div>`;
+            canvas.innerHTML = '<div class="empty-hint"><p>👈 从左侧拖拽组件到这里开始编辑</p></div>';
             return;
         }
 
-        canvas.innerHTML = state.blocks.map((block, index) => {
-            const isSelected = block.id === state.selectedId;
-            return `
-                <div class="block-wrapper ${isSelected ? 'selected' : ''}" 
-                     data-block-id="${block.id}" 
-                     data-block-index="${index}"
-                     draggable="false">
-                    <div class="block-drag-handle" draggable="true" title="拖拽排序">⋮⋮</div>
-                    <div class="block-actions">
-                        <button class="block-action-btn duplicate" title="复制" data-action="duplicate">📋</button>
-                        <button class="block-action-btn delete" title="删除" data-action="delete">🗑️</button>
-                    </div>
-                    <div class="block-content">
-                        ${TemplateEngine.renderEditorBlock(block)}
-                    </div>
-                </div>
-            `;
-        }).join('');
+        let html = '';
+        state.blocks.forEach(function(block, index) {
+            const isSelected = block.id === state.selectedId && !state.selectedColId;
+            html += renderBlockWrapper(block, index, isSelected);
+        });
 
+        canvas.innerHTML = html;
         bindBlockEvents(canvas);
     }
 
+    function renderBlockWrapper(block, index, isSelected) {
+        var wrapperClass = 'block-wrapper' + (isSelected ? ' selected' : '');
+        var content = '';
+
+        if (block.type === 'columns') {
+            content = renderColumnsEditor(block);
+        } else {
+            content = '<div class="block-content">' + TemplateEngine.renderEditorBlock(block) + '</div>';
+        }
+
+        return '<div class="' + wrapperClass + '" data-block-id="' + block.id + '" data-block-index="' + index + '" draggable="false">' +
+            '<div class="block-drag-handle" draggable="true" title="拖拽排序">⋮⋮</div>' +
+            '<div class="block-actions">' +
+                '<button class="block-action-btn duplicate" title="复制" data-action="duplicate">📋</button>' +
+                '<button class="block-action-btn delete" title="删除" data-action="delete">🗑️</button>' +
+            '</div>' +
+            content +
+        '</div>';
+    }
+
+    function renderColumnsEditor(block) {
+        var d = block.data;
+        var cols = d.columns || 2;
+        var state = LayoutManager.getState();
+        var colsHtml = '';
+
+        for (var i = 0; i < cols; i++) {
+            var col = d.children[i];
+            if (!col) continue;
+
+            var isColSelected = state.selectedId && state.selectedColId === col.id;
+            var colClass = 'mj-column' + (isColSelected ? ' column-selected' : '');
+            var colContent = '';
+
+            if (col.blocks && col.blocks.length > 0) {
+                col.blocks.forEach(function(childBlock, childIndex) {
+                    var isChildSelected = state.selectedId === childBlock.id;
+                    colContent += renderChildBlockWrapper(childBlock, childIndex, block.id, col.id, isChildSelected);
+                });
+            }
+
+            if (colContent === '') {
+                colContent = '<div class="column-empty-hint"><p>👈 拖拽组件到这里</p></div>';
+            }
+
+            colsHtml += '<div class="' + colClass + '" data-col-id="' + col.id + '" data-parent-block-id="' + block.id + '" data-col-index="' + i + '">' +
+                '<div class="column-header">第' + (i + 1) + '栏</div>' +
+                '<div class="column-content" data-col-id="' + col.id + '" data-parent-block-id="' + block.id + '">' +
+                    colContent +
+                '</div>' +
+            '</div>';
+        }
+
+        return '<div class="block-content"><div class="mj-column-wrapper">' + colsHtml + '</div></div>';
+    }
+
+    function renderChildBlockWrapper(block, index, parentBlockId, colId, isSelected) {
+        var wrapperClass = 'child-block-wrapper' + (isSelected ? ' selected' : '');
+        var content = TemplateEngine.renderEditorBlock(block);
+
+        return '<div class="' + wrapperClass + '" data-block-id="' + block.id + '" data-block-index="' + index + '"' +
+            ' data-parent-block-id="' + parentBlockId + '" data-col-id="' + colId + '" draggable="false">' +
+            '<div class="child-block-drag-handle" draggable="true" title="拖拽排序">⋮⋮</div>' +
+            '<div class="child-block-actions">' +
+                '<button class="block-action-btn duplicate" title="复制" data-action="duplicate">📋</button>' +
+                '<button class="block-action-btn delete" title="删除" data-action="delete">🗑️</button>' +
+            '</div>' +
+            '<div class="block-content">' + content + '</div>' +
+        '</div>';
+    }
+
     function bindBlockEvents(canvas) {
-        canvas.querySelectorAll('.block-wrapper').forEach(wrapper => {
+        canvas.querySelectorAll('.block-wrapper').forEach(function(wrapper) {
             const blockId = wrapper.dataset.blockId;
             const handle = wrapper.querySelector('.block-drag-handle');
 
-            handle.addEventListener('dragstart', (e) => {
+            handle.addEventListener('dragstart', function(e) {
                 e.stopPropagation();
                 draggingType = null;
                 draggingBlockId = blockId;
+                draggingParentBlockId = null;
+                draggingColId = null;
                 wrapper.classList.add('dragging');
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', blockId);
             });
 
-            handle.addEventListener('dragend', (e) => {
-                draggingType = null;
-                draggingBlockId = null;
+            handle.addEventListener('dragend', function(e) {
                 wrapper.classList.remove('dragging');
+                clearDragState();
                 clearDragOver();
             });
 
-            wrapper.addEventListener('dragover', (e) => {
+            wrapper.addEventListener('dragover', function(e) {
                 if (!draggingBlockId && !draggingType) return;
+                if (draggingParentBlockId) return;
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -206,50 +272,48 @@ const App = (() => {
                 const midPoint = rect.top + rect.height / 2;
                 const position = e.clientY < midPoint ? 'top' : 'bottom';
 
-                if (dragOverBlockId !== blockId || dragOverPosition !== position) {
-                    clearDragOver();
-                    dragOverBlockId = blockId;
-                    dragOverPosition = position;
-                    wrapper.classList.add(position === 'top' ? 'drag-over-top' : 'drag-over-bottom');
-                }
+                setDragOver(wrapper, position, {
+                    type: 'main',
+                    blockId: blockId,
+                    position: position
+                });
             });
 
-            wrapper.addEventListener('dragleave', (e) => {
+            wrapper.addEventListener('dragleave', function(e) {
                 if (!wrapper.contains(e.relatedTarget)) {
                     wrapper.classList.remove('drag-over-top', 'drag-over-bottom');
-                    if (dragOverBlockId === blockId) {
-                        dragOverBlockId = null;
-                        dragOverPosition = null;
-                    }
                 }
             });
 
-            wrapper.addEventListener('drop', (e) => {
+            wrapper.addEventListener('drop', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 clearDragOver();
 
+                const targetIndex = LayoutManager.getBlockIndex(blockId);
+                const pos = dragOverTarget && dragOverTarget.position;
+                const insertIndex = pos === 'top' ? targetIndex : targetIndex + 1;
+
                 if (draggingType && !draggingBlockId) {
                     const block = ComponentLibrary.createBlock(draggingType);
-                    const targetIndex = LayoutManager.getBlockIndex(blockId);
-                    const insertIndex = dragOverPosition === 'top' ? targetIndex : targetIndex + 1;
                     LayoutManager.addBlock(block, insertIndex);
-                } else if (draggingBlockId && draggingBlockId !== blockId) {
+                } else if (draggingBlockId && !draggingParentBlockId && draggingBlockId !== blockId) {
                     const fromIndex = LayoutManager.getBlockIndex(draggingBlockId);
-                    const toIndex = LayoutManager.getBlockIndex(blockId);
-                    const finalIndex = dragOverPosition === 'top' ? toIndex : toIndex + 1;
-                    LayoutManager.moveBlock(fromIndex, finalIndex);
+                    LayoutManager.moveBlock(fromIndex, insertIndex);
                 }
+                clearDragState();
             });
 
-            wrapper.querySelector('.block-content').addEventListener('click', (e) => {
+            wrapper.querySelector('.block-content').addEventListener('click', function(e) {
+                const childWrapper = e.target.closest('.child-block-wrapper');
+                const column = e.target.closest('.mj-column');
+                if (childWrapper) return;
                 e.stopPropagation();
-                const col = e.target.closest('.mj-column');
-                LayoutManager.selectBlock(blockId);
+                LayoutManager.selectBlock(blockId, null);
             });
 
-            wrapper.querySelectorAll('.block-action-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
+            wrapper.querySelectorAll('.block-action-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
                     e.stopPropagation();
                     const action = btn.dataset.action;
                     if (action === 'delete') {
@@ -261,55 +325,226 @@ const App = (() => {
                     }
                 });
             });
+        });
 
-            const columns = wrapper.querySelectorAll('.mj-column');
-            columns.forEach((col, colIdx) => {
-                col.addEventListener('click', (e) => {
+        bindColumnEvents(canvas);
+        bindChildBlockEvents(canvas);
+    }
+
+    function bindColumnEvents(canvas) {
+        canvas.querySelectorAll('.mj-column').forEach(function(column) {
+            const parentBlockId = column.dataset.parentBlockId;
+            const colId = column.dataset.colId;
+
+            column.addEventListener('click', function(e) {
+                const childWrapper = e.target.closest('.child-block-wrapper');
+                if (childWrapper) return;
+                e.stopPropagation();
+                const state = LayoutManager.getState();
+                if (state.selectedColId !== colId) {
+                    LayoutManager.selectBlock(null, colId);
+                }
+            });
+
+            const content = column.querySelector('.column-content');
+            if (content) {
+                content.addEventListener('dragover', function(e) {
+                    if (!draggingType && !draggingBlockId) return;
+                    e.preventDefault();
                     e.stopPropagation();
-                    LayoutManager.selectBlock(blockId);
-                    const block = LayoutManager.getSelectedBlock();
-                    if (block && block.type === 'columns') {
-                        renderColumnProperties(block, colIdx);
+                    content.classList.add('drag-over');
+                    setDragOver(content, 'bottom', {
+                        type: 'column',
+                        parentBlockId: parentBlockId,
+                        colId: colId,
+                        position: 'bottom'
+                    });
+                });
+
+                content.addEventListener('dragleave', function(e) {
+                    if (!content.contains(e.relatedTarget)) {
+                        content.classList.remove('drag-over');
+                    }
+                });
+
+                content.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    content.classList.remove('drag-over');
+                    clearDragOver();
+
+                    if (draggingType && !draggingBlockId) {
+                        const block = ComponentLibrary.createBlock(draggingType);
+                        LayoutManager.addBlockToColumn(parentBlockId, colId, block);
+                    } else if (draggingBlockId && draggingParentBlockId === parentBlockId && draggingColId === colId) {
+                    } else if (draggingBlockId && draggingParentBlockId) {
+                    } else if (draggingBlockId && !draggingParentBlockId) {
+                        const block = LayoutManager.getState().blocks.find(b => b.id === draggingBlockId);
+                        if (block && block.type !== 'columns') {
+                            const newBlock = JSON.parse(JSON.stringify(block));
+                            newBlock.id = 'block_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                            LayoutManager.addBlockToColumn(parentBlockId, colId, newBlock);
+                            LayoutManager.removeBlock(draggingBlockId);
+                        }
+                    }
+                    clearDragState();
+                });
+            }
+        });
+    }
+
+    function bindChildBlockEvents(canvas) {
+        canvas.querySelectorAll('.child-block-wrapper').forEach(function(wrapper) {
+            const blockId = wrapper.dataset.blockId;
+            const parentBlockId = wrapper.dataset.parentBlockId;
+            const colId = wrapper.dataset.colId;
+            const handle = wrapper.querySelector('.child-block-drag-handle');
+
+            handle.addEventListener('dragstart', function(e) {
+                e.stopPropagation();
+                draggingType = null;
+                draggingBlockId = blockId;
+                draggingParentBlockId = parentBlockId;
+                draggingColId = colId;
+                wrapper.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', blockId);
+            });
+
+            handle.addEventListener('dragend', function(e) {
+                wrapper.classList.remove('dragging');
+                clearDragState();
+                clearDragOver();
+            });
+
+            wrapper.addEventListener('dragover', function(e) {
+                if (!draggingType && !draggingBlockId) return;
+                if (draggingParentBlockId && draggingParentBlockId !== parentBlockId) return;
+                if (draggingParentBlockId && draggingColId !== colId) return;
+                e.preventDefault();
+                e.stopPropagation();
+
+                const rect = wrapper.getBoundingClientRect();
+                const midPoint = rect.top + rect.height / 2;
+                const position = e.clientY < midPoint ? 'top' : 'bottom';
+
+                setDragOver(wrapper, position, {
+                    type: 'child',
+                    parentBlockId: parentBlockId,
+                    colId: colId,
+                    blockId: blockId,
+                    position: position
+                });
+            });
+
+            wrapper.addEventListener('dragleave', function(e) {
+                if (!wrapper.contains(e.relatedTarget)) {
+                    wrapper.classList.remove('drag-over-top', 'drag-over-bottom');
+                }
+            });
+
+            wrapper.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                clearDragOver();
+
+                const childIndex = LayoutManager.getColumnBlockIndex(parentBlockId, colId, blockId);
+                const pos = dragOverTarget && dragOverTarget.position;
+                const insertIndex = pos === 'top' ? childIndex : childIndex + 1;
+
+                if (draggingType && !draggingBlockId) {
+                    const block = ComponentLibrary.createBlock(draggingType);
+                    LayoutManager.addBlockToColumn(parentBlockId, colId, block, insertIndex);
+                } else if (draggingBlockId && draggingParentBlockId === parentBlockId && draggingColId === colId && draggingBlockId !== blockId) {
+                    const fromIndex = LayoutManager.getColumnBlockIndex(parentBlockId, colId, draggingBlockId);
+                    LayoutManager.moveBlockInColumn(parentBlockId, colId, fromIndex, insertIndex);
+                }
+                clearDragState();
+            });
+
+            wrapper.querySelector('.block-content').addEventListener('click', function(e) {
+                e.stopPropagation();
+                LayoutManager.selectBlock(blockId, colId);
+            });
+
+            wrapper.querySelectorAll('.block-action-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const action = btn.dataset.action;
+                    if (action === 'delete') {
+                        if (confirm('确定要删除这个组件吗？')) {
+                            LayoutManager.removeBlockFromColumn(parentBlockId, colId, blockId);
+                        }
+                    } else if (action === 'duplicate') {
+                        LayoutManager.duplicateColumnBlock(parentBlockId, colId, blockId);
                     }
                 });
             });
         });
     }
 
+    function setDragOver(element, position, target) {
+        clearDragOver();
+        dragOverTarget = target;
+        if (position === 'top') {
+            element.classList.add('drag-over-top');
+        } else {
+            element.classList.add('drag-over-bottom');
+        }
+    }
+
     function clearDragOver() {
-        document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
-            el.classList.remove('drag-over-top', 'drag-over-bottom');
+        document.querySelectorAll('.drag-over-top, .drag-over-bottom, .drag-over').forEach(function(el) {
+            el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over');
         });
-        dragOverBlockId = null;
-        dragOverPosition = null;
+        dragOverTarget = null;
+    }
+
+    function clearDragState() {
+        draggingType = null;
+        draggingBlockId = null;
+        draggingParentBlockId = null;
+        draggingColId = null;
     }
 
     function renderProperties() {
         const container = document.getElementById('properties-content');
-        const block = LayoutManager.getSelectedBlock();
+        const state = LayoutManager.getState();
 
-        if (!block) {
+        if (!state.selectedId && !state.selectedColId) {
             container.innerHTML = '<p class="empty-hint">点击组件编辑属性</p>';
             return;
         }
 
+        if (state.selectedColId && !state.selectedId) {
+            container.innerHTML = renderColumnProperties(state.selectedColId);
+            return;
+        }
+
+        const info = LayoutManager.findBlockByIdRecursive(state.selectedId);
+        if (!info) {
+            container.innerHTML = '<p class="empty-hint">点击组件编辑属性</p>';
+            return;
+        }
+
+        const block = info.block;
         const comp = ComponentLibrary.getComponent(block.type);
         if (!comp) {
             container.innerHTML = '<p class="empty-hint">未知组件类型</p>';
             return;
         }
 
-        let html = `<h4 style="margin-bottom:8px;color:#374151;">${comp.icon} ${comp.label} 属性</h4>`;
+        let html = '<h4 style="margin-bottom:8px;color:#374151;">' + comp.icon + ' ' + comp.label + ' 属性</h4>';
 
-        comp.fields.forEach(field => {
+        comp.fields.forEach(function(field) {
             if (field.type === 'group') {
-                html += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;font-weight:600;">${field.label}</div>
-                    <div class="form-row">`;
-                field.fields.forEach(subField => {
+                html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;">' +
+                    '<div style="font-size:12px;color:#6b7280;margin-bottom:6px;font-weight:600;">' + field.label + '</div>' +
+                    '<div class="form-row">';
+                field.fields.forEach(function(subField) {
                     html += renderFormField(subField, block.data[subField.key]);
                 });
-                html += `</div></div>`;
+                html += '</div></div>';
             } else {
                 html += renderFormField(field, block.data[field.key]);
             }
@@ -317,147 +552,118 @@ const App = (() => {
 
         container.innerHTML = html;
 
-        bindFieldEvents(container, block);
+        if (info.parentBlockId && info.colId) {
+            bindFieldEvents(container, block.id, info.parentBlockId, info.colId);
+        } else {
+            bindFieldEvents(container, block.id, null, null);
+        }
     }
 
-    function renderColumnProperties(block, colIdx) {
-        const container = document.getElementById('properties-content');
-        const child = block.data.children[colIdx];
-        if (!child) return;
+    function renderColumnProperties(colId) {
+        const state = LayoutManager.getState();
+        let colInfo = null;
+        let parentBlock = null;
 
-        const comp = ComponentLibrary.getComponent(child.type);
-        if (!comp) return;
-
-        let html = `<h4 style="margin-bottom:8px;color:#374151;">📊 第${colIdx + 1}栏 - ${comp.label} 属性</h4>`;
-
-        comp.fields.forEach(field => {
-            if (field.type === 'group') {
-                html += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;">
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;font-weight:600;">${field.label}</div>
-                    <div class="form-row">`;
-                field.fields.forEach(subField => {
-                    html += renderFormField(subField, child.data[subField.key], `col-${colIdx}-`);
-                });
-                html += `</div></div>`;
-            } else {
-                html += renderFormField(field, child.data[field.key], `col-${colIdx}-`);
+        for (let i = 0; i < state.blocks.length; i++) {
+            const b = state.blocks[i];
+            if (b.type === 'columns' && b.data.children) {
+                for (let j = 0; j < b.data.children.length; j++) {
+                    if (b.data.children[j].id === colId) {
+                        colInfo = b.data.children[j];
+                        parentBlock = b;
+                        break;
+                    }
+                }
             }
-        });
+        }
 
-        container.innerHTML = html;
+        if (!colInfo || !parentBlock) {
+            return '<p class="empty-hint">点击组件编辑属性</p>';
+        }
 
-        bindColumnFieldEvents(container, block.id, colIdx);
+        const blockCount = colInfo.blocks ? colInfo.blocks.length : 0;
+        const colIndex = parentBlock.data.children.findIndex(c => c.id === colId);
+
+        return '<h4 style="margin-bottom:8px;color:#374151;">📊 第' + (colIndex + 1) + '栏</h4>' +
+            '<div style="font-size:13px;color:#6b7280;line-height:1.6;">' +
+                '<p><strong>栏内组件数：</strong>' + blockCount + ' 个</p>' +
+                '<p style="margin-top:8px;">从左侧拖拽组件到该栏即可添加。</p>' +
+                '<p style="margin-top:8px;">点击栏内组件可编辑其属性。</p>' +
+            '</div>';
     }
 
-    function renderFormField(field, value, prefix = '') {
-        const inputId = prefix + 'field-' + field.key;
+    function renderFormField(field, value) {
+        var inputId = 'field-' + field.key;
         switch (field.type) {
             case 'text':
             case 'number':
-                const step = field.step ? ` step="${field.step}"` : '';
-                return `<div class="form-group">
-                    <label for="${inputId}">${field.label}</label>
-                    <input type="${field.type}" id="${inputId}" data-field="${field.key}" value="${value !== undefined ? value : ''}"${step}>
-                </div>`;
+                var step = field.step ? ' step="' + field.step + '"' : '';
+                return '<div class="form-group">' +
+                    '<label for="' + inputId + '">' + field.label + '</label>' +
+                    '<input type="' + field.type + '" id="' + inputId + '" data-field="' + field.key + '" value="' + (value !== undefined ? value : '') + '"' + step + '>' +
+                '</div>';
             case 'textarea':
-                return `<div class="form-group">
-                    <label for="${inputId}">${field.label}</label>
-                    <textarea id="${inputId}" data-field="${field.key}">${value !== undefined ? value : ''}</textarea>
-                </div>`;
+                return '<div class="form-group">' +
+                    '<label for="' + inputId + '">' + field.label + '</label>' +
+                    '<textarea id="' + inputId + '" data-field="' + field.key + '">' + (value !== undefined ? value : '') + '</textarea>' +
+                '</div>';
             case 'select':
-                const options = field.options.map(opt => 
-                    `<option value="${opt.value}" ${value == opt.value ? 'selected' : ''}>${opt.label}</option>`
-                ).join('');
-                return `<div class="form-group">
-                    <label for="${inputId}">${field.label}</label>
-                    <select id="${inputId}" data-field="${field.key}">${options}</select>
-                </div>`;
+                var options = field.options.map(function(opt) {
+                    return '<option value="' + opt.value + '" ' + (value == opt.value ? 'selected' : '') + '>' + opt.label + '</option>';
+                }).join('');
+                return '<div class="form-group">' +
+                    '<label for="' + inputId + '">' + field.label + '</label>' +
+                    '<select id="' + inputId + '" data-field="' + field.key + '">' + options + '</select>' +
+                '</div>';
             case 'color':
-                return `<div class="form-group">
-                    <label for="${inputId}">${field.label}</label>
-                    <input type="color" id="${inputId}" data-field="${field.key}" value="${value || '#000000'}">
-                </div>`;
+                return '<div class="form-group">' +
+                    '<label for="' + inputId + '">' + field.label + '</label>' +
+                    '<input type="color" id="' + inputId + '" data-field="' + field.key + '" value="' + (value || '#000000') + '">' +
+                '</div>';
             default:
                 return '';
         }
     }
 
-    function bindFieldEvents(container, block) {
-        container.querySelectorAll('[data-field]').forEach(input => {
-            const field = input.dataset.field;
-            const eventType = input.type === 'color' || input.tagName === 'SELECT' ? 'input' : 'input';
+    function bindFieldEvents(container, blockId, parentBlockId, colId) {
+        container.querySelectorAll('[data-field]').forEach(function(input) {
+            var field = input.dataset.field;
 
-            input.addEventListener(eventType, (e) => {
-                let value = e.target.value;
+            input.addEventListener('input', function(e) {
+                var value = e.target.value;
                 if (input.type === 'number') {
                     value = parseFloat(value) || 0;
                 }
-                LayoutManager.updateBlock(block.id, { [field]: value });
+
+                if (parentBlockId && colId) {
+                    LayoutManager.updateColumnBlock(parentBlockId, colId, blockId, {});
+                    LayoutManager.updateColumnBlock(parentBlockId, colId, blockId, { [field]: value });
+                } else {
+                    LayoutManager.updateBlock(blockId, { [field]: value });
+                }
             });
 
             if (input.tagName === 'SELECT') {
-                input.addEventListener('change', (e) => {
-                    let value = e.target.value;
+                input.addEventListener('change', function(e) {
+                    var value = e.target.value;
                     if (!isNaN(parseFloat(value)) && isFinite(value)) {
                         value = parseFloat(value);
                     }
-                    if (field === 'columns') {
-                        handleColumnCountChange(block.id, value);
+                    if (field === 'columns' && !parentBlockId) {
+                        LayoutManager.handleColumnCountChange(blockId, value);
+                    } else if (parentBlockId && colId) {
+                        LayoutManager.updateColumnBlock(parentBlockId, colId, blockId, { [field]: value });
                     } else {
-                        LayoutManager.updateBlock(block.id, { [field]: value });
+                        LayoutManager.updateBlock(blockId, { [field]: value });
                     }
                 });
             }
         });
     }
 
-    function handleColumnCountChange(blockId, newCount) {
-        const block = LayoutManager.getState().blocks.find(b => b.id === blockId);
-        if (!block || block.type !== 'columns') return;
-
-        const newChildren = [...(block.data.children || [])];
-        const targetCount = parseInt(newCount);
-
-        while (newChildren.length < targetCount) {
-            newChildren.push({
-                type: 'paragraph',
-                data: JSON.parse(JSON.stringify(ComponentLibrary.getComponent('paragraph').defaults))
-            });
-        }
-        while (newChildren.length > targetCount) {
-            newChildren.pop();
-        }
-
-        LayoutManager.updateBlock(blockId, { columns: targetCount, children: newChildren });
-    }
-
-    function bindColumnFieldEvents(container, blockId, colIdx) {
-        container.querySelectorAll('[data-field]').forEach(input => {
-            const field = input.dataset.field;
-
-            input.addEventListener('input', (e) => {
-                let value = e.target.value;
-                if (input.type === 'number') {
-                    value = parseFloat(value) || 0;
-                }
-                LayoutManager.updateColumnChild(blockId, colIdx, { [field]: value });
-            });
-
-            if (input.tagName === 'SELECT') {
-                input.addEventListener('change', (e) => {
-                    let value = e.target.value;
-                    if (!isNaN(parseFloat(value)) && isFinite(value)) {
-                        value = parseFloat(value);
-                    }
-                    LayoutManager.updateColumnChild(blockId, colIdx, { [field]: value });
-                });
-            }
-        });
-    }
-
-    return { init };
+    return { init: init };
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     App.init();
 });
