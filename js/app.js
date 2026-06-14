@@ -6,12 +6,50 @@ const App = (() => {
     let draggingColId = null;
     let dragOverTarget = null;
 
+    const STORAGE_KEY = 'email_template_editor_state_v1';
+
+    function saveStateToStorage(state) {
+        try {
+            const data = {
+                blocks: state.blocks,
+                savedAt: Date.now()
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+            console.warn('保存到 localStorage 失败:', e);
+        }
+    }
+
+    function loadStateFromStorage() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (!data || !Array.isArray(data.blocks)) return null;
+            return {
+                blocks: data.blocks,
+                selectedId: null,
+                selectedColId: null
+            };
+        } catch (e) {
+            console.warn('从 localStorage 读取失败:', e);
+            return null;
+        }
+    }
+
+    function clearStateFromStorage() {
+        localStorage.removeItem(STORAGE_KEY);
+    }
+
     function init() {
-        const initialState = {
-            blocks: [],
-            selectedId: null,
-            selectedColId: null
-        };
+        let initialState = loadStateFromStorage();
+        if (!initialState) {
+            initialState = {
+                blocks: [],
+                selectedId: null,
+                selectedColId: null
+            };
+        }
 
         LayoutManager.init(initialState, {
             onChange: onStateChange,
@@ -27,6 +65,7 @@ const App = (() => {
     }
 
     function onStateChange(state) {
+        saveStateToStorage(state);
         renderEditor();
         PreviewRenderer.render(state.blocks);
         renderProperties();
@@ -97,8 +136,17 @@ const App = (() => {
 
         document.getElementById('btn-clear').addEventListener('click', function() {
             if (LayoutManager.getState().blocks.length === 0) return;
-            if (confirm('确定要清空所有内容吗？')) {
+            if (confirm('确定要清空所有内容吗？（本地缓存也会一并清除）')) {
                 LayoutManager.clearAll();
+                clearStateFromStorage();
+            }
+        });
+
+        document.getElementById('btn-reset-storage').addEventListener('click', function() {
+            if (confirm('确定要重置本地缓存吗？\n\n这将清空所有已保存的编辑内容，恢复到空白状态。')) {
+                clearStateFromStorage();
+                LayoutManager.clearAll();
+                alert('本地缓存已重置！');
             }
         });
 
