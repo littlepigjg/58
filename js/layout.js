@@ -86,24 +86,41 @@ const LayoutManager = (() => {
         selectBlock(null, null);
     }
 
+    function syncColumnBlocksToMain(blockId, colId, newColumnBlocks) {
+        const currentBlocks = mainList.getBlocks();
+        const newBlocks = currentBlocks.map(function(b) {
+            if (b.id !== blockId) return b;
+            if (b.type !== 'columns') return b;
+
+            const newChildren = b.data.children.map(function(col) {
+                if (col.id !== colId) return col;
+                return { ...col, blocks: newColumnBlocks };
+            });
+
+            return {
+                ...b,
+                data: { ...b.data, children: newChildren }
+            };
+        });
+
+        mainList.setBlocks(newBlocks);
+    }
+
     function getColumnManager(blockId, colId) {
         const block = mainList.getBlockById(blockId);
         if (!block || block.type !== 'columns') return null;
 
-        const col = block.data.children.find(c => c.id === colId);
+        const col = block.data.children.find(function(c) { return c.id === colId; });
         if (!col) return null;
 
-        const onChange = () => {
-            const newBlocks = mainList.getBlocks().map(b => {
-                if (b.id === blockId) {
-                    return JSON.parse(JSON.stringify(b));
-                }
-                return b;
-            });
-            mainList.setBlocks(newBlocks);
+        const onChange = function(newColumnBlocks) {
+            syncColumnBlocksToMain(blockId, colId, newColumnBlocks);
         };
 
-        return BlockListManager.createManager(col.blocks, onChange);
+        return BlockListManager.createManager(
+            JSON.parse(JSON.stringify(col.blocks || [])),
+            onChange
+        );
     }
 
     function addBlockToColumn(blockId, colId, newBlock, targetIndex) {
@@ -180,7 +197,7 @@ const LayoutManager = (() => {
                 for (let j = 0; j < b.data.children.length; j++) {
                     const col = b.data.children[j];
                     if (col.blocks) {
-                        const found = col.blocks.find(cb => cb.id === blockId);
+                        const found = col.blocks.find(function(cb) { return cb.id === blockId; });
                         if (found) {
                             return { block: found, parentBlockId: b.id, colId: col.id };
                         }
